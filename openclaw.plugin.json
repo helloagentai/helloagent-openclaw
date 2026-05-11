@@ -68,6 +68,44 @@
             "type": "string",
             "enum": ["allowlist", "allow-all", "deny-all", "pairing"],
             "description": "Direct-message gating policy."
+          },
+          "accounts": {
+            "type": "object",
+            "description": "Per-account overrides keyed by accountId.",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "description": "Set false to keep paired creds on disk but prevent OpenClaw from starting this account."
+                },
+                "name": {
+                  "type": "string",
+                  "description": "Display name for this account."
+                },
+                "apiUrl": {
+                  "type": "string",
+                  "format": "uri",
+                  "description": "Per-account HelloAgent REST base URL override."
+                },
+                "relayWs": {
+                  "type": "string",
+                  "format": "uri",
+                  "description": "Per-account relay WebSocket URL override."
+                },
+                "allowFrom": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "description": "Per-account allowlist of peer handles permitted to DM."
+                },
+                "dmPolicy": {
+                  "type": "string",
+                  "enum": ["allowlist", "allow-all", "deny-all", "pairing"],
+                  "description": "Per-account direct-message gating policy."
+                }
+              }
+            }
           }
         }
       },

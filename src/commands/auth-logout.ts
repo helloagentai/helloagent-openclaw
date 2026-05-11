@@ -1,9 +1,17 @@
 /**
- * `gateway.logoutAccount` adapter — invoked by OpenClaw when the user runs
- * `openclaw channels logout --channel helloagent [--account <id>]`.
+ * Account-teardown adapters.
  *
- * Behavior: stop the live WS session (if any) and delete the credentials
- * file from disk. Returns `{ cleared: true, loggedOut: true }`.
+ * Two entry points share one cleanup routine:
+ *
+ *   - `logoutHelloAgent` — `gateway.logoutAccount`, invoked by
+ *     `openclaw channels logout --channel helloagent [--account <id>]`.
+ *   - `onHelloAgentAccountRemoved` — `lifecycle.onAccountRemoved`, invoked
+ *     whenever an account leaves the cfg (per-account removal, or as a
+ *     side-effect of `openclaw plugins uninstall helloagent` blowing away
+ *     the entire `channels.helloagent` block).
+ *
+ * Cleanup is best-effort and idempotent: stops the live WS session if any,
+ * then deletes the on-disk `creds.json`. Both steps tolerate "already gone".
  */
 import type { ChannelPlugin } from "openclaw/plugin-sdk/channel-core";
 
@@ -17,11 +25,23 @@ type LogoutAccountFn = NonNullable<
 type LogoutCtx = Parameters<LogoutAccountFn>[0];
 type LogoutResult = Awaited<ReturnType<LogoutAccountFn>>;
 
+type LifecycleAdapter = NonNullable<ChannelPlugin<ResolvedHelloAgentAccount>["lifecycle"]>;
+type OnAccountRemovedFn = NonNullable<LifecycleAdapter["onAccountRemoved"]>;
+type OnAccountRemovedParams = Parameters<OnAccountRemovedFn>[0];
+
+async function cleanupAccount(accountId: string, log: (s: string) => void): Promise<void> {
+  log(`[helloagent] cleaning up account ${accountId}`);
+  await stopAccount(accountId).catch(() => undefined);
+  await deleteCreds(accountId).catch(() => undefined);
+}
+
 export async function logoutHelloAgent(ctx: LogoutCtx): Promise<LogoutResult> {
-  const accountId = ctx.accountId;
-  ctx.runtime.log(`[helloagent] logout: stopping session for ${accountId}`);
-  await stopAccount(accountId);
-  await deleteCreds(accountId);
-  ctx.runtime.log(`[helloagent] logout: creds removed for ${accountId}`);
+  await cleanupAccount(ctx.accountId, (s) => ctx.runtime.log(s));
   return { cleared: true, loggedOut: true };
+}
+
+export async function onHelloAgentAccountRemoved(
+  params: OnAccountRemovedParams,
+): Promise<void> {
+  await cleanupAccount(params.accountId, (s) => params.runtime.log(s));
 }

@@ -54,6 +54,21 @@ openclaw config set channels.helloagent.allowFrom.0 alice
 | `allow-all` | Any HelloAgent peer can DM (a warning is logged) |
 | `deny-all` | Inbound DMs are dropped |
 
+## Uninstalling
+
+`openclaw plugins uninstall helloagent` removes the cfg entry, install record, and load path — but it does **not** wipe credentials. Log out each account first so the live WebSocket session is torn down and the `creds.json` files are deleted:
+
+```bash
+openclaw channels logout --channel helloagent     # repeat per --account <id> if you have several
+openclaw plugins uninstall helloagent
+```
+
+Or, if you've already uninstalled and want to scrub leftover tokens:
+
+```bash
+rm -rf ~/.openclaw/credentials/helloagent
+```
+
 ## Capabilities
 
 | | |

@@ -33,7 +33,7 @@ import type { HelloAgentAccount, ResolvedHelloAgentAccount } from "../core/types
 import { sendText } from "../messaging/outbound/send.js";
 import { helloAgentOutbound } from "../messaging/outbound/outbound.js";
 import { loginHelloAgent } from "../commands/auth-login.js";
-import { logoutHelloAgent } from "../commands/auth-logout.js";
+import { logoutHelloAgent, onHelloAgentAccountRemoved } from "../commands/auth-logout.js";
 import {
   applyAccountConfig,
   collectHelloAgentSecurityWarnings,
@@ -378,6 +378,16 @@ export const helloAgentPlugin: ChannelPlugin<ResolvedHelloAgentAccount> = {
       await stopAccount(ctx.accountId);
     },
     logoutAccount: logoutHelloAgent,
+  },
+
+  // -------------------------------------------------------------------------
+  // Lifecycle — react to account removal from cfg (covers `channels logout`
+  // and the cascade from `plugins uninstall helloagent`). Deletes the
+  // on-disk creds so sensitive ha_* tokens don't outlive the install.
+  // -------------------------------------------------------------------------
+
+  lifecycle: {
+    onAccountRemoved: onHelloAgentAccountRemoved,
   },
 
   // -------------------------------------------------------------------------
