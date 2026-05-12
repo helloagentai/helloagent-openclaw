@@ -23,58 +23,15 @@ That's it. The plugin auto-enables `channels.helloagent` in your `openclaw.json`
 
 > If you don't have a gateway running yet, skip `openclaw gateway restart` — the channel will come up on your next `openclaw gateway run`.
 
-## Usage
-
-```bash
-openclaw channels list                            # show channel + account status
-openclaw channels logout --channel helloagent     # remove credentials
-```
-
-DM policy is configured per-account:
-
-```bash
-openclaw config set channels.helloagent.dmPolicy allowlist
-openclaw config set channels.helloagent.allowFrom.0 alice
-```
-
-| `dmPolicy` | Behavior |
-|---|---|
-| `allowlist` (default) | Only handles in `allowFrom` can DM the agent |
-| `pairing` | New peers must approve a pairing code first |
-| `allow-all` | Any HelloAgent peer can DM (a warning is logged) |
-| `deny-all` | Inbound DMs are dropped |
-
-## Multiple accounts
-
-Each named account has its own `creds.json` and cfg block:
-
-```json
-{
-  "channels": {
-    "helloagent": {
-      "accounts": {
-        "work":     { "enabled": true, "dmPolicy": "allowlist", "allowFrom": ["alice"] },
-        "personal": { "enabled": true, "dmPolicy": "allow-all" }
-      }
-    }
-  }
-}
-```
-
-Pair them with `--account`:
-
-```bash
-openclaw channels login --channel helloagent --account work
-```
-
 ## Troubleshooting
 
 ### `Channel login failed: Error: Unsupported channel: helloagent`
 
-OpenClaw doesn't have `channels.helloagent` in your config yet. Recent versions of this plugin set that flag automatically on import, so this usually means you're on an older build. Fix it with one command:
+OpenClaw doesn't have `channels.helloagent` in your config yet. Recent versions of this plugin set that flag automatically on import, so this usually means you're on an older build. Fix it manually:
 
 ```bash
 openclaw config set channels.helloagent.enabled true
+openclaw gateway restart                            # only if a gateway is running
 openclaw channels login --channel helloagent
 ```
 
