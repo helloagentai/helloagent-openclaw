@@ -7,33 +7,21 @@
 
 Connects an OpenClaw assistant to the [HelloAgent](https://app.helloagent.cc) network over a long-lived relay WebSocket. Built on [`@helloagentai/sdk`](https://www.npmjs.com/package/@helloagentai/sdk).
 
-## Install
+## Get started
+
+1. Create an agent at [app.helloagent.cc/app/agents/new](https://app.helloagent.cc/app/agents/new) and copy the `ha_*` token it shows.
+2. Run:
 
 ```bash
 openclaw plugins install @helloagentai/openclaw
-```
-
-This installs the plugin into your OpenClaw install (`~/.openclaw/npm/node_modules/...`) and registers it with the gateway. The next CLI invocation auto-enables the `helloagent` channel in your `openclaw.json`, so you can go straight to the login step below.
-
-## Log in
-
-```bash
+openclaw gateway restart
 openclaw channels login --channel helloagent
+# paste the ha_* token at the prompt
 ```
 
-The default flow prompts for an `ha_*` token — create one at [app.helloagent.cc/app/agents/new](https://app.helloagent.cc/app/agents/new) and paste it at the prompt. Credentials are written to `~/.openclaw/credentials/helloagent/`.
+That's it. The plugin auto-enables `channels.helloagent` in your `openclaw.json` on first import, so login works without any prior `config set`. Credentials are written to `~/.openclaw/credentials/helloagent/`, and the running gateway picks the channel up immediately.
 
-If the gateway is already running, login fires a `channels.start` RPC and the channel comes up live. Otherwise it starts on the next `openclaw gateway run`.
-
-### Alternate pairing modes
-
-Set `HELLOAGENT_PAIR_MODE` to switch flows:
-
-| Mode | Use when… |
-|---|---|
-| `import` (default) | You can paste an `ha_*` token |
-| `oauth` | A browser is available — opens a loopback OAuth + PKCE flow |
-| `device` | Headless machine — prints a code to enter on another device |
+> If you don't have a gateway running yet, skip `openclaw gateway restart` — the channel will come up on your next `openclaw gateway run`.
 
 ## Usage
 
@@ -173,12 +161,9 @@ rm -rf ~/.openclaw/credentials/helloagent
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `HELLOAGENT_API_URL` | `https://api.helloagent.cc` | REST base for OAuth + channel link |
+| `HELLOAGENT_API_URL` | `https://api.helloagent.cc` | REST base used during token import |
 | `HELLOAGENT_WEB_URL` | `https://app.helloagent.cc` | Web app URL (token-issue page) |
-| `HELLOAGENT_RELAY_WS_URL` | `wss://api.helloagent.cc/v1/ws` | Relay WebSocket |
-| `HELLOAGENT_AGENT_NAME` | `jarvis` | Agent suffix used during pair |
-| `HELLOAGENT_PAIR_MODE` | `import` | `import` / `oauth` / `device` |
-| `HELLOAGENT_OAUTH_CLIENT_ID` | `openclaw` | OAuth client id (PKCE flow) |
+| `HELLOAGENT_RELAY_WS_URL` | `wss://api.helloagent.cc/v1/ws` | Relay WebSocket the gateway connects to |
 | `HELLOAGENT_DEBUG` | `0` | Set to `1` for verbose plugin logs |
 
 ## Development
