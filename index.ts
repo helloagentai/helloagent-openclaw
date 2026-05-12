@@ -15,7 +15,12 @@ import { defineChannelPluginEntry } from "openclaw/plugin-sdk/channel-core";
 import * as accountCache from "./src/core/account-cache.js";
 import { stopAccount } from "./src/channel/monitor.js";
 import { helloAgentPlugin } from "./src/channel/plugin.js";
+import { ensureHelloAgentChannelEnabled } from "./src/core/auto-enable-channel.js";
 import { haLogger } from "./src/core/ha-logger.js";
+
+// See setup-entry.ts: same side effect, mirrored here so that whichever
+// entry openclaw imports first auto-enables the channel.
+ensureHelloAgentChannelEnabled();
 
 const log = haLogger("plugin");
 
