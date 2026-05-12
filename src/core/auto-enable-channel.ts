@@ -136,3 +136,18 @@ export function ensureHelloAgentChannelEnabled(): void {
     // ignore
   }
 }
+
+/**
+ * Internals exposed for the smoke test (tests/smoke.ts). Not part of the
+ * public API — do not import from outside this package.
+ *
+ * @internal
+ */
+export const __testing = {
+  channelAlreadyDecided,
+  patchCfgInPlace,
+  resolveCfgPath,
+  resetAttempted(): void {
+    attempted = false;
+  },
+};

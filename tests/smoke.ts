@@ -32,6 +32,10 @@ import {
   type HelloAgentCreds,
 } from "../src/core/auth-store.js";
 import {
+  __testing as autoEnableInternals,
+  ensureHelloAgentChannelEnabled,
+} from "../src/core/auto-enable-channel.js";
+import {
   mergeHelloAgentAccountConfig,
   readCfg,
   resolveCfgPath,
@@ -480,6 +484,185 @@ async function testCfgStore(tmpDir: string): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// 8. auto-enable-channel — pure helpers + disk side effect
+// ---------------------------------------------------------------------------
+
+async function testAutoEnableChannel(tmp: string): Promise<void> {
+  const fs = await import("node:fs/promises");
+
+  // 1) channelAlreadyDecided — pure, six shapes.
+  const decided = autoEnableInternals.channelAlreadyDecided;
+  assertEq(decided({}), false, "empty cfg → not decided");
+  assertEq(decided({ channels: {} }), false, "channels {} → not decided");
+  assertEq(decided({ channels: { helloagent: {} } }), false, "helloagent {} → not decided");
+  assertEq(
+    decided({ channels: { helloagent: { dmPolicy: "allowlist" } } }),
+    false,
+    "policy only, no enabled key → not decided",
+  );
+  assertEq(
+    decided({ channels: { helloagent: { enabled: true } } }),
+    true,
+    "enabled: true → decided",
+  );
+  assertEq(
+    decided({ channels: { helloagent: { enabled: false } } }),
+    true,
+    "enabled: false (opt-out) → decided",
+  );
+  assertEq(
+    decided({ channels: { helloagent: [] as unknown as Record<string, unknown> } }),
+    false,
+    "non-object entry → not decided",
+  );
+  ok("channelAlreadyDecided covers all six cfg shapes");
+
+  // 2) patchCfgInPlace — pure, mutates cfg.
+  const a: Record<string, unknown> = {};
+  autoEnableInternals.patchCfgInPlace(a);
+  assertEq(
+    (a.channels as { helloagent: { enabled: boolean } }).helloagent.enabled,
+    true,
+    "patch into empty cfg",
+  );
+
+  const b: Record<string, unknown> = {
+    channels: {
+      telegram: { enabled: true },
+      helloagent: { dmPolicy: "allowlist", allowFrom: ["alice"] },
+    },
+  };
+  autoEnableInternals.patchCfgInPlace(b);
+  const bH = (b.channels as { helloagent: Record<string, unknown> }).helloagent;
+  assertEq(bH.enabled, true, "patch adds enabled");
+  assertEq(bH.dmPolicy, "allowlist", "patch preserves dmPolicy");
+  assert(
+    Array.isArray(bH.allowFrom) && (bH.allowFrom as string[])[0] === "alice",
+    "patch preserves allowFrom",
+  );
+  const bTele = (b.channels as { telegram: { enabled: boolean } }).telegram;
+  assertEq(bTele.enabled, true, "patch preserves other channels");
+  ok("patchCfgInPlace merges without clobbering siblings");
+
+  // 3) ensureHelloAgentChannelEnabled — end-to-end disk behavior.
+
+  // 3a) Missing cfg → creates one with enabled=true.
+  const cfg3a = path.join(tmp, "auto-enable-3a", "openclaw.json");
+  process.env.OPENCLAW_CONFIG_PATH = cfg3a;
+  autoEnableInternals.resetAttempted();
+  ensureHelloAgentChannelEnabled();
+  const after3a = JSON.parse(await fs.readFile(cfg3a, "utf-8")) as {
+    channels: { helloagent: { enabled: boolean } };
+  };
+  assertEq(after3a.channels.helloagent.enabled, true, "missing cfg → created with enabled=true");
+  const bak3a = await fs
+    .access(`${cfg3a}.bak`)
+    .then(() => true)
+    .catch(() => false);
+  assertEq(bak3a, false, "no .bak when cfg was fresh-created");
+  ok("missing cfg → fresh write, no .bak");
+
+  // 3b) Existing cfg without helloagent → patched in, .bak rolled.
+  const cfg3b = path.join(tmp, "auto-enable-3b", "openclaw.json");
+  await fs.mkdir(path.dirname(cfg3b), { recursive: true });
+  await fs.writeFile(
+    cfg3b,
+    JSON.stringify({ channels: { telegram: { enabled: true } } }, null, 2),
+  );
+  process.env.OPENCLAW_CONFIG_PATH = cfg3b;
+  autoEnableInternals.resetAttempted();
+  ensureHelloAgentChannelEnabled();
+  const after3b = JSON.parse(await fs.readFile(cfg3b, "utf-8")) as {
+    channels: { helloagent: { enabled: boolean }; telegram: { enabled: boolean } };
+  };
+  assertEq(after3b.channels.helloagent.enabled, true, "patched helloagent enabled");
+  assertEq(after3b.channels.telegram.enabled, true, "preserved telegram");
+  const bak3b = await fs
+    .access(`${cfg3b}.bak`)
+    .then(() => true)
+    .catch(() => false);
+  assertEq(bak3b, true, ".bak rotated on overwrite");
+  ok("existing cfg → patch + .bak rotation");
+
+  // 3c) User opt-out (enabled: false) is preserved.
+  const cfg3c = path.join(tmp, "auto-enable-3c", "openclaw.json");
+  await fs.mkdir(path.dirname(cfg3c), { recursive: true });
+  const optOutPayload = JSON.stringify(
+    { channels: { helloagent: { enabled: false, dmPolicy: "deny-all" } } },
+    null,
+    2,
+  );
+  await fs.writeFile(cfg3c, optOutPayload);
+  process.env.OPENCLAW_CONFIG_PATH = cfg3c;
+  autoEnableInternals.resetAttempted();
+  ensureHelloAgentChannelEnabled();
+  assertEq(
+    await fs.readFile(cfg3c, "utf-8"),
+    optOutPayload,
+    "opt-out cfg byte-for-byte unchanged",
+  );
+  ok("enabled:false opt-out is preserved verbatim");
+
+  // 3d) Already enabled → no-op (no .bak written).
+  const cfg3d = path.join(tmp, "auto-enable-3d", "openclaw.json");
+  await fs.mkdir(path.dirname(cfg3d), { recursive: true });
+  const alreadyEnabledPayload = JSON.stringify(
+    { channels: { helloagent: { enabled: true } } },
+    null,
+    2,
+  );
+  await fs.writeFile(cfg3d, alreadyEnabledPayload);
+  process.env.OPENCLAW_CONFIG_PATH = cfg3d;
+  autoEnableInternals.resetAttempted();
+  ensureHelloAgentChannelEnabled();
+  assertEq(
+    await fs.readFile(cfg3d, "utf-8"),
+    alreadyEnabledPayload,
+    "enabled:true cfg unchanged",
+  );
+  const bak3d = await fs
+    .access(`${cfg3d}.bak`)
+    .then(() => true)
+    .catch(() => false);
+  assertEq(bak3d, false, "no .bak created when no patch needed");
+  ok("enabled:true is a no-op (no rewrite, no .bak)");
+
+  // 3e) Corrupt cfg → leave it alone.
+  const cfg3e = path.join(tmp, "auto-enable-3e", "openclaw.json");
+  await fs.mkdir(path.dirname(cfg3e), { recursive: true });
+  const garbage = "{ not valid json";
+  await fs.writeFile(cfg3e, garbage);
+  process.env.OPENCLAW_CONFIG_PATH = cfg3e;
+  autoEnableInternals.resetAttempted();
+  ensureHelloAgentChannelEnabled();
+  assertEq(await fs.readFile(cfg3e, "utf-8"), garbage, "corrupt cfg untouched");
+  ok("corrupt cfg → don't overwrite");
+
+  // 3f) Idempotency within a single process: the `attempted` guard short-circuits.
+  const cfg3f = path.join(tmp, "auto-enable-3f", "openclaw.json");
+  process.env.OPENCLAW_CONFIG_PATH = cfg3f;
+  autoEnableInternals.resetAttempted();
+  ensureHelloAgentChannelEnabled();
+  // Tamper with the file after the first call; a second call should NOT rewrite.
+  await fs.writeFile(cfg3f, JSON.stringify({ tampered: true }, null, 2));
+  ensureHelloAgentChannelEnabled();
+  const after3f = JSON.parse(await fs.readFile(cfg3f, "utf-8")) as { tampered?: boolean };
+  assertEq(after3f.tampered, true, "second call did not rewrite (attempted guard)");
+  ok("ensureHelloAgentChannelEnabled is idempotent per process");
+
+  // 3g) Subsequent process (after reset) re-evaluates from disk.
+  autoEnableInternals.resetAttempted();
+  ensureHelloAgentChannelEnabled();
+  const after3g = JSON.parse(await fs.readFile(cfg3f, "utf-8")) as {
+    channels?: { helloagent?: { enabled?: boolean } };
+    tampered?: boolean;
+  };
+  assertEq(after3g.channels?.helloagent?.enabled, true, "post-reset re-patch applied");
+  assertEq(after3g.tampered, true, "post-reset re-patch preserved tampered key");
+  ok("post-reset re-evaluates and patches without losing existing keys");
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -498,6 +681,7 @@ async function main(): Promise<void> {
     await step("5. security.collectWarnings", testSecurityWarnings);
     await step("6. Disk creds → cache → plugin.config", () => testDiskCredsWiring(tmp));
     await step("7. cfg-store atomic I/O", () => testCfgStore(tmp));
+    await step("8. auto-enable-channel", () => testAutoEnableChannel(tmp));
   } finally {
     if (originalState === undefined) delete process.env.OPENCLAW_STATE_DIR;
     else process.env.OPENCLAW_STATE_DIR = originalState;
