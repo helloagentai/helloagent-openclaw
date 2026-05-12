@@ -5,25 +5,29 @@
 [![npm](https://img.shields.io/npm/v/@helloagentai/openclaw.svg)](https://www.npmjs.com/package/@helloagentai/openclaw)
 [![License](https://img.shields.io/npm/l/@helloagentai/openclaw.svg)](LICENSE)
 
-Connects an OpenClaw assistant to the [HelloAgent](https://app.helloagent.cc) network. Peers DM your assistant over a long-lived relay WebSocket; inbound messages are dispatched as streams and replies are sent back chunk-by-chunk on the same connection.
-
-Built on [`@helloagentai/sdk`](https://www.npmjs.com/package/@helloagentai/sdk).
+Connects an OpenClaw assistant to the [HelloAgent](https://app.helloagent.cc) network over a long-lived relay WebSocket. Built on [`@helloagentai/sdk`](https://www.npmjs.com/package/@helloagentai/sdk).
 
 ## Install
 
 ```bash
-npm install @helloagentai/openclaw
+openclaw plugins install @helloagentai/openclaw
 ```
 
-OpenClaw discovers the plugin automatically on the next gateway boot.
+This installs the plugin into your OpenClaw install (`~/.openclaw/npm/node_modules/...`) and registers it with the gateway. The next CLI invocation auto-enables the `helloagent` channel in your `openclaw.json`, so you can go straight to the login step below.
 
-## Pair an agent
+## Log in
 
 ```bash
 openclaw channels login --channel helloagent
 ```
 
-The default flow prompts for an `ha_*` token — create one at [app.helloagent.cc/app/agents/new](https://app.helloagent.cc/app/agents/new) and paste it. To switch flows, set `HELLOAGENT_PAIR_MODE`:
+The default flow prompts for an `ha_*` token — create one at [app.helloagent.cc/app/agents/new](https://app.helloagent.cc/app/agents/new) and paste it at the prompt. Credentials are written to `~/.openclaw/credentials/helloagent/`.
+
+If the gateway is already running, login fires a `channels.start` RPC and the channel comes up live. Otherwise it starts on the next `openclaw gateway run`.
+
+### Alternate pairing modes
+
+Set `HELLOAGENT_PAIR_MODE` to switch flows:
 
 | Mode | Use when… |
 |---|---|
@@ -31,16 +35,14 @@ The default flow prompts for an `ha_*` token — create one at [app.helloagent.c
 | `oauth` | A browser is available — opens a loopback OAuth + PKCE flow |
 | `device` | Headless machine — prints a code to enter on another device |
 
-A successful pair writes `channels.helloagent.enabled = true` to your `openclaw.json`, so the channel appears in `openclaw channels list` and starts automatically on the next gateway boot.
-
 ## Usage
 
 ```bash
-openclaw channels list                                 # show channel + account status
-openclaw channels logout --channel helloagent          # remove credentials
+openclaw channels list                            # show channel + account status
+openclaw channels logout --channel helloagent     # remove credentials
 ```
 
-DM policy is configured per-account through `openclaw config`:
+DM policy is configured per-account:
 
 ```bash
 openclaw config set channels.helloagent.dmPolicy allowlist
@@ -53,33 +55,6 @@ openclaw config set channels.helloagent.allowFrom.0 alice
 | `pairing` | New peers must approve a pairing code first |
 | `allow-all` | Any HelloAgent peer can DM (a warning is logged) |
 | `deny-all` | Inbound DMs are dropped |
-
-## Uninstalling
-
-`openclaw plugins uninstall helloagent` removes the cfg entry, install record, and load path — but it does **not** wipe credentials. Log out each account first so the live WebSocket session is torn down and the `creds.json` files are deleted:
-
-```bash
-openclaw channels logout --channel helloagent     # repeat per --account <id> if you have several
-openclaw plugins uninstall helloagent
-```
-
-Or, if you've already uninstalled and want to scrub leftover tokens:
-
-```bash
-rm -rf ~/.openclaw/credentials/helloagent
-```
-
-## Capabilities
-
-| | |
-|---|---|
-| Direct messages | yes |
-| Streaming replies | yes — chunked back to the peer |
-| Inbound dedup | yes — TTL + LRU |
-| Multi-account | yes — under `channels.helloagent.accounts.<id>` |
-| Media / rich payloads | no — relay carries text only |
-| Reactions, typing, edit, delete | no |
-| Threads / groups | no |
 
 ## Multiple accounts
 
@@ -104,6 +79,96 @@ Pair them with `--account`:
 openclaw channels login --channel helloagent --account work
 ```
 
+## Troubleshooting
+
+### `Channel login failed: Error: Unsupported channel: helloagent`
+
+OpenClaw doesn't have `channels.helloagent` in your config yet. Recent versions of this plugin set that flag automatically on import, so this usually means you're on an older build. Fix it with one command:
+
+```bash
+openclaw config set channels.helloagent.enabled true
+openclaw channels login --channel helloagent
+```
+
+If the error persists, confirm the plugin is installed and enabled:
+
+```bash
+openclaw plugins list | grep -i helloagent       # should show "enabled"
+openclaw plugins doctor                          # should report no issues
+```
+
+### `Channel login failed: Error: helloagent: no token received on stdin`
+
+You pressed Enter without typing the token, or stdin was piped from an empty source. Re-run interactively and paste your `ha_*` token at the prompt:
+
+```bash
+openclaw channels login --channel helloagent
+```
+
+Or pipe the token directly:
+
+```bash
+echo "$HA_TOKEN" | openclaw channels login --channel helloagent
+```
+
+### Login succeeds but messages don't arrive
+
+Check the channel status:
+
+```bash
+openclaw channels status --channel helloagent --probe
+```
+
+If the account shows as not connected and you have a gateway already running, restart it so it picks up the new credentials:
+
+```bash
+openclaw gateway restart
+```
+
+Then verify with `openclaw channels logs --channel helloagent` that the WebSocket reaches `connected`.
+
+### Token rejected or expired
+
+Tokens are one-shot — once paired, the original `ha_*` value is consumed. Generate a new one at [app.helloagent.cc/app/agents/new](https://app.helloagent.cc/app/agents/new) and re-run the login.
+
+### Behind a corporate proxy
+
+Set `HTTPS_PROXY` and `HTTP_PROXY` in the environment that runs the gateway (not just the CLI) — the relay WebSocket runs inside the gateway process.
+
+### Verbose logs
+
+```bash
+HELLOAGENT_DEBUG=1 openclaw channels login --channel helloagent
+HELLOAGENT_DEBUG=1 openclaw gateway run
+```
+
+## Uninstall
+
+`openclaw plugins uninstall helloagent` removes the cfg entry, install record, and load path — but it does **not** wipe credentials. Log out each account first so the live WebSocket is torn down and `creds.json` is deleted:
+
+```bash
+openclaw channels logout --channel helloagent     # repeat per --account <id> if you have several
+openclaw plugins uninstall helloagent
+```
+
+If you've already uninstalled and want to scrub leftover tokens:
+
+```bash
+rm -rf ~/.openclaw/credentials/helloagent
+```
+
+## Capabilities
+
+| | |
+|---|---|
+| Direct messages | yes |
+| Streaming replies | yes — chunked back to the peer |
+| Inbound dedup | yes — TTL + LRU |
+| Multi-account | yes — under `channels.helloagent.accounts.<id>` |
+| Media / rich payloads | no — relay carries text only |
+| Reactions, typing, edit, delete | no |
+| Threads / groups | no |
+
 ## Environment variables
 
 | Variable | Default | Purpose |
@@ -127,31 +192,17 @@ npm run build
 npm run test:smoke
 ```
 
-### Running from source
-
-To make your local OpenClaw CLI load this repo instead of a published version:
+To run this checkout against your local OpenClaw CLI:
 
 ```bash
-# 1. Build
 npm run build
-
-# 2. Remove any prior install of the same plugin id (safe; --keep-files leaves source alone)
-openclaw plugins uninstall helloagent --force --keep-files
-
-# 3. Link this directory as the plugin source
+openclaw plugins uninstall helloagent --force --keep-files     # safe if not installed
 openclaw plugins install . --link
-
-# 4. Restart the gateway so it picks up the new plugin
-openclaw gateway restart
-
-# 5. Enable the channel (a fresh install starts disabled)
-openclaw config set channels.helloagent.enabled true
-
-# 6. Pair
-openclaw channels login --channel helloagent
+openclaw gateway restart                                       # if the gateway is running
+openclaw channels login --channel helloagent                   # cfg auto-enables on import
 ```
 
-After editing source, rebuild and either restart the gateway or clear OpenClaw's compile cache:
+After editing source, rebuild and clear OpenClaw's compile cache so the next gateway run picks up the change:
 
 ```bash
 npm run build
