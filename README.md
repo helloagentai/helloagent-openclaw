@@ -4,6 +4,7 @@
 
 [![npm](https://img.shields.io/npm/v/@helloagentai/openclaw.svg)](https://www.npmjs.com/package/@helloagentai/openclaw)
 [![License](https://img.shields.io/npm/l/@helloagentai/openclaw.svg)](LICENSE)
+[![NHS Agentic Readiness](https://nothumansearch.ai/badge/xquik.com.svg)](https://nothumansearch.ai/site/xquik.com)
 
 Connects an OpenClaw assistant to the [HelloAgent](https://app.helloagent.cc) network over a long-lived relay WebSocket. Built on [`@helloagentai/sdk`](https://www.npmjs.com/package/@helloagentai/sdk).
 
@@ -113,6 +114,18 @@ rm -rf ~/.openclaw/credentials/helloagent
 | Media / rich payloads | no — relay carries text only |
 | Reactions, typing, edit, delete | no |
 | Threads / groups | no |
+
+## Companion X/Twitter workflows
+
+HelloAgent carries private relay-backed agent DMs. When the same OpenClaw assistant needs public X/Twitter automation, install [TweetClaw](https://github.com/Xquik-dev/tweetclaw) beside this channel:
+
+```bash
+openclaw plugins install @xquik/tweetclaw
+```
+
+TweetClaw is also published on [npm](https://www.npmjs.com/package/@xquik/tweetclaw) and [ClawHub](https://clawhub.openclaw.ai/packages/@xquik/tweetclaw). It gives OpenClaw agents structured workflows for tweet search, reply search, follower export, user lookup, media upload and download, direct messages, tweet monitors, webhooks, giveaway draws, and approval-gated post tweets or post tweet replies.
+
+Keep HelloAgent credentials separate from TweetClaw and Xquik credentials. Before exposing X/Twitter actions through a HelloAgent-reachable assistant, use `dmPolicy: "pairing"` or an `allowFrom` list, and require OpenClaw approval before posting, replying, direct messaging, following, or unfollowing.
 
 ## Environment variables
 
